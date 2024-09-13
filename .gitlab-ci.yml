@@ -1,0 +1,54 @@
+image: ghcr.io/cirruslabs/flutter:3.22.2
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  PROJECT_ID: "csci-5410-serverless-dp"
+  REGION: "us-east4"
+  ARTIFACT_REGISTRY: "us-east4-docker.pkg.dev/csci-5410-serverless-dp/dal-vacation-home-flutter-app"
+
+before_script:
+  - cd frontend/dal_vacation_home
+  - rm .gitignore
+  - echo $SECRETS_DATA > lib/secrets.dart
+  - mkdir assets
+  - echo $GOOGLE_DIALOG_FLOW_SERVICE_ACCOUNT_JSON > assets/csci5410-groupproject-a9a880dea030-Dialogflow-API-Key.json
+
+build:
+  stage: build
+  script:
+    - flutter pub get
+    - flutter --version
+    - flutter build web --release
+  artifacts:
+    paths:
+      - frontend/dal_vacation_home/build/web
+  only:
+    - dev
+    - main
+    - /^feat\/gitlab-.*/
+test:
+  stage: test
+  script:
+    - flutter test
+  only:
+    - dev
+    - main
+    - /^feat\/gitlab-.*/
+
+cloud_run_deploy:
+  stage: deploy
+  image: google/cloud-sdk
+  script:
+    - echo "Deploying to Google Artifact Registry"
+    - echo $GOOGLE_ARTIFACT_REGISTRY_SERVICE_ACCOUNT_JSON > /tmp/gcp-artifact-registry-key.json
+    - gcloud auth activate-service-account --key-file /tmp/gcp-artifact-registry-key.json
+    - gcloud config set project $PROJECT_ID
+    - gcloud builds submit . --config=cloudbuild.yaml
+  only:
+    - dev
+    - main
+    - /^feat\/gitlab-.*/

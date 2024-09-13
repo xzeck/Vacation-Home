@@ -1,0 +1,1604 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CloudFormation Template (IaC) for CSCI 5410 DALVacationHome Project"
+
+Mappings:
+  ResourceTags:
+    project-tag:
+      project: "dalvacationhome"
+  Role:
+    LabRole:
+      Arn: "arn:aws:iam::273495653834:role/LabRole"
+  S3Bucket:
+    ZipBucket:
+      Name: "dal-vacation-home-lambda-files"
+
+Resources:
+  # Cognito User Pool and User Pool Client with Lambda Invoke Permission for PreSignUp Lambda Function
+  CognitoUserPool:
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: "DALVacationHomeUserPool"
+      UsernameAttributes:
+        - "email"
+      Schema:
+        - Name: "email"
+          Required: true
+          Mutable: false
+      MfaConfiguration: "OFF"
+      UserPoolTags:
+        project: !FindInMap [ResourceTags, project-tag, project]
+      LambdaConfig:
+        PreSignUp: "arn:aws:lambda:us-east-1:979846776516:function:preSignupAutoVerifyEmailFunction"
+
+  CognitoUserPoolClient:
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      ClientName: "DALVacationHomeUserPoolClient"
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      RefreshTokenValidity: 30
+      ExplicitAuthFlows:
+        - "ALLOW_REFRESH_TOKEN_AUTH"
+        - "ALLOW_USER_PASSWORD_AUTH"
+        - "ALLOW_USER_SRP_AUTH"
+      SupportedIdentityProviders:
+        - "COGNITO"
+
+  LambdaInvokePermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName: "arn:aws:lambda:us-east-1:979846776516:function:preSignupAutoVerifyEmailFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "cognito-idp.amazonaws.com"
+      SourceArn: !GetAtt CognitoUserPool.Arn
+
+  # User Authentication Lambda Functions
+
+  setSecurityAnsDalVacationHomeLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "setSecurityAnsDalVacationHomeLambdaFunction"
+      Runtime: "python3.12"
+      Handler: "setSecurityAnsDalVacationHomeFunction.lambda_handler"
+      Code:
+        S3Bucket: "dal-vacation-home-lambda-files"
+        S3Key: "setSecurityAnsDalVacationHomeFunction.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  EmailSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: EventEmailSubscription
+      TopicName: SendEmailTopic
+
+  SubscribeUserEmailToTopic:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "SubscribeUserEmailToTopic"
+      Runtime: "python3.12"
+      Handler: "SubscribeUserEmailToTopic.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "SubscribeUserEmailToTopic.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref EmailSNSTopic
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  SendEventEmailToUser:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "SendEventEmailToUser"
+      Runtime: "python3.12"
+      Handler: "SendEventEmailToUser.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "SendEventEmailToUser.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref EmailSNSTopic
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # DynamoDB table for user data
+  UserDataTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: "dal_vacation_home_user_data"
+      AttributeDefinitions:
+        - AttributeName: "userId"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "userId"
+          KeyType: "HASH" # Partition key
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      BillingMode: "PROVISIONED"
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # DynamoDB table for agent data
+  AgentDataTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: "dal_vacation_home_agent_data"
+      AttributeDefinitions:
+        - AttributeName: "userId"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "userId"
+          KeyType: "HASH" # Partition key
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      BillingMode: "PROVISIONED"
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # DynamoDB table for booking data
+  BookingDataTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: "dal_vacation_home_booking_data"
+      AttributeDefinitions:
+        - AttributeName: "booking_number"
+          AttributeType: "N"
+      KeySchema:
+        - AttributeName: "booking_number"
+          KeyType: "HASH" # Partition key
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      BillingMode: "PROVISIONED"
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # DynamoDB table for room data
+  RoomDataTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: "dal_vacation_home_room_data"
+      AttributeDefinitions:
+        - AttributeName: "roomId"
+          AttributeType: "N"
+      KeySchema:
+        - AttributeName: "roomId"
+          KeyType: "HASH" # Partition key
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      BillingMode: "PROVISIONED"
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  ApiGatewayRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: "DalVacationHomeApis"
+      Description: "API Gateway for Dal Vacation Home Lambda functions"
+
+  ApiGatewayModelEmail:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      Name: "email"
+      ContentType: "application/json"
+      Schema:
+        {
+          "type": "object",
+          "required": ["email"],
+          "properties": { "email": { "type": "string", "format": "email" } },
+          "additionalProperties": false,
+        }
+
+  ApiGatewayModelEmailType:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      Name: "emailAndType"
+      ContentType: "application/json"
+      Schema:
+        {
+          "type": "object",
+          "required": ["email", "type"],
+          "properties":
+            {
+              "email": { "type": "string", "format": "email" },
+              "type": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+
+  ApiGatewayResourceSns:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "sns"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayResourceSubscribe:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayResourceSns
+      PathPart: "subscribe"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayResourceSendEmail:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayResourceSns
+      PathPart: "sendEmail"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodOptionsSns:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceSns
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodOptionsSubscribe:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceSubscribe
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodPostSubscribe:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceSubscribe
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt SubscribeUserEmailToTopic.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+        RequestTemplates:
+          application/json: >-
+            #set($inputRoot = $input.path('$'))
+            {
+              "email": "$inputRoot.email"
+            }
+      RequestModels:
+        "application/json": !Ref ApiGatewayModelEmail
+      RequestParameters:
+        method.request.querystring.email: false
+      RequestValidatorId: !Ref ApiGatewayRequestValidator
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodOptionsSendEmail:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceSendEmail
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodPostSendEmail:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceSendEmail
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt SendEventEmailToUser.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  AuthLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "StoreCaesarCipherUserKey"
+      Runtime: "python3.12"
+      Handler: "storeCaesarCipherUserKey.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "storeCaesarCipherUserKey.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  ApiGatewayResourceAuth:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "auth"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayResourceCaesarCipher:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayResourceAuth
+      PathPart: "caesarcipher"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodOptionsCaesarCipher:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceCaesarCipher
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodPostCaesarCipher:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceCaesarCipher
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt AuthLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  LambdaInvokePermissionCaesarCipher:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref AuthLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/auth/caesarcipher"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for Caesar Cipher verify
+  CaesarCipherVerifyLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "VerifyCaesarCipher"
+      Runtime: "python3.12"
+      Handler: "verifyCaesarCipher.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "verifyCaesarCipherFunction.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # New Lambda function for Security QnA set
+  SetSecurityAnsLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "SetSecurityAnsDalVacationHome"
+      Runtime: "python3.12"
+      Handler: "setSecurityAnsDalVacationHome.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "setSecurityAnsDalVacationHomeFunction.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # New Lambda function for Security QnA verify
+  VerifySecurityAnsLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "VerifySecurityAnsDalVacationHome"
+      Runtime: "python3.12"
+      Handler: "verifySecurityAnsDalVacationHome.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "verifySecurityAnsDalVacationHome.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resources and methods for Caesar Cipher verify
+  ApiGatewayResourceCaesarCipherVerify:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayResourceCaesarCipher
+      PathPart: "verify"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodOptionsCaesarCipherVerify:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceCaesarCipherVerify
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodPostCaesarCipherVerify:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceCaesarCipherVerify
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt CaesarCipherVerifyLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  LambdaInvokePermissionCaesarCipherVerify:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref CaesarCipherVerifyLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/auth/caesarcipher/verify"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # API Gateway resources and methods for Security QnA
+  ApiGatewayResourceSecurityQnA:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayResourceAuth
+      PathPart: "securityqna"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodOptionsSecurityQnA:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceSecurityQnA
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodPostSecurityQnA:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceSecurityQnA
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt SetSecurityAnsLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  LambdaInvokePermissionSecurityQnA:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref SetSecurityAnsLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/auth/securityqna"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # API Gateway resources and methods for Security QnA verify
+  ApiGatewayResourceSecurityQnAVerify:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref ApiGatewayResourceSecurityQnA
+      PathPart: "verify"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayMethodOptionsSecurityQnAVerify:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceSecurityQnAVerify
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  ApiGatewayMethodPostSecurityQnAVerify:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceSecurityQnAVerify
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt VerifySecurityAnsLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  LambdaInvokePermissionSecurityQnAVerify:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref VerifySecurityAnsLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/auth/securityqna/verify"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for Upload
+  UploadLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "UploadImageToS3"
+      Runtime: "python3.12"
+      Handler: "uploadImageToS3.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "uploadImageToS3.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for upload
+  ApiGatewayResourceUpload:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "upload"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for upload
+  ApiGatewayMethodOptionsUpload:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceUpload
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for upload
+  ApiGatewayMethodPostUpload:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceUpload
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt UploadLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+        RequestTemplates:
+          application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  LambdaInvokePermissionUpload:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref UploadLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/upload"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for Booking - GET method
+  GetUserBookingsLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "GetUserBookings"
+      Runtime: "python3.12"
+      Handler: "getUserBookings.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "getUserBookings.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # New Lambda function for Booking - POST method
+  UpdateUserBookingRoomDbTablesLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "UpdateUserBookingRoomDbTables"
+      Runtime: "python3.12"
+      Handler: "updateUserBookingRoomDbTables.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "updateUserBookingRoomDbTables.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for booking
+  ApiGatewayResourceBooking:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "booking"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for booking
+  ApiGatewayMethodOptionsBooking:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceBooking
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway GET method for booking
+  ApiGatewayMethodGetBooking:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "GET"
+      ResourceId: !Ref ApiGatewayResourceBooking
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt GetUserBookingsLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for booking
+  ApiGatewayMethodPostBooking:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceBooking
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - {
+              LambdaFunctionArn: !GetAtt UpdateUserBookingRoomDbTablesLambdaFunction.Arn,
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  LambdaInvokePermissionGetBooking:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref GetUserBookingsLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/booking"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  LambdaInvokePermissionPostBooking:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref UpdateUserBookingRoomDbTablesLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/booking"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for Get Rooms - GET method
+  GetAllRoomsLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "GetAllRooms"
+      Runtime: "python3.12"
+      Handler: "getAllRooms.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "getAllRooms.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for get_rooms
+  ApiGatewayResourceGetRooms:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "get_rooms"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for get_rooms
+  ApiGatewayMethodOptionsGetRooms:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceGetRooms
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway GET method for get_rooms
+  ApiGatewayMethodGetRooms:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "GET"
+      ResourceId: !Ref ApiGatewayResourceGetRooms
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt GetAllRoomsLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for get_rooms
+  ApiGatewayMethodPostGetRooms:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceGetRooms
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt GetAllRoomsLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  LambdaInvokePermissionGetRooms:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref GetAllRoomsLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/GET/get_rooms"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  LambdaInvokePermissionPostGetRooms:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref GetAllRoomsLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/get_rooms"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for Add or Edit Rooms - POST method
+  AddOrEditRoomLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "AddOrEditRoom"
+      Runtime: "python3.12"
+      Handler: "addOrEditRoom.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "addOrEditRoom.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for add_rooms
+  ApiGatewayResourceAddRooms:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "add_rooms"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for add_rooms
+  ApiGatewayMethodOptionsAddRooms:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceAddRooms
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for add_rooms
+  ApiGatewayMethodPostAddRooms:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceAddRooms
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt AddOrEditRoomLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Lambda permission for Add or Edit Room Lambda function
+  LambdaInvokePermissionAddOrEditRoom:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref AddOrEditRoomLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/add_rooms"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for Booking Number - POST method
+  BotBookingDurationLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "BotBookingDuration"
+      Runtime: "python3.12"
+      Handler: "botBookingDuration.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "botBookingDuration.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for booking_number
+  ApiGatewayResourceBookingNumber:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "booking_number"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for booking_number
+  ApiGatewayMethodOptionsBookingNumber:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceBookingNumber
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for booking_number
+  ApiGatewayMethodPostBookingNumber:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceBookingNumber
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt BotBookingDurationLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Lambda permission for Bot Booking Duration Lambda function
+  LambdaInvokePermissionBotBookingDuration:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref BotBookingDurationLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/booking_number"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for DialogFlowControllerAPI - POST method
+  DialogFlowControllerLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "DialogFlowControllerLambda"
+      Runtime: "python3.12"
+      Handler: "dialogFlowControllerLambda.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "DialogFlowControllerLambda.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for dialogFlowControllerAPI
+  ApiGatewayResourceDialogFlowController:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "dialogFlowControllerAPI"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for dialogFlowControllerAPI
+  ApiGatewayMethodOptionsDialogFlowController:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceDialogFlowController
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for dialogFlowControllerAPI
+  ApiGatewayMethodPostDialogFlowController:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceDialogFlowController
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - {
+              LambdaFunctionArn: !GetAtt DialogFlowControllerLambdaFunction.Arn,
+            }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Lambda permission for DialogFlowControllerLambda function
+  LambdaInvokePermissionDialogFlowController:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref DialogFlowControllerLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/dialogFlowControllerAPI"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for feedback - POST method
+  FeedbackLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "FeedbackLambda"
+      Runtime: "python3.12"
+      Handler: "feedbackLambda.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "feedbacklambda.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for feedback
+  ApiGatewayResourceFeedback:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "feedback"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for feedback
+  ApiGatewayMethodOptionsFeedback:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceFeedback
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for feedback
+  ApiGatewayMethodPostFeedback:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceFeedback
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt FeedbackLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Lambda permission for FeedbackLambda function
+  LambdaInvokePermissionFeedback:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref FeedbackLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/feedback"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  # New Lambda function for roomavailability - POST method
+  RoomAvailabilityLambdaFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: "RoomAvailabilityLambda"
+      Runtime: "python3.12"
+      Handler: "roomAvailabilityLambda.lambda_handler"
+      Code:
+        S3Bucket: !FindInMap [S3Bucket, ZipBucket, Name]
+        S3Key: "roomAvailability.zip"
+      Role: !FindInMap [Role, LabRole, Arn]
+      Tags:
+        - Key: "project"
+          Value: "dalvacationhome"
+
+  # API Gateway resource for roomavailability
+  ApiGatewayResourceRoomAvailability:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+      PathPart: "roomavailability"
+      RestApiId: !Ref ApiGatewayRestApi
+
+  # API Gateway OPTIONS method for roomavailability
+  ApiGatewayMethodOptionsRoomAvailability:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "OPTIONS"
+      ResourceId: !Ref ApiGatewayResourceRoomAvailability
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        Type: "MOCK"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Gateway POST method for roomavailability
+  ApiGatewayMethodPostRoomAvailability:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: "NONE"
+      HttpMethod: "POST"
+      ResourceId: !Ref ApiGatewayResourceRoomAvailability
+      RestApiId: !Ref ApiGatewayRestApi
+      Integration:
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations"
+          - { LambdaFunctionArn: !GetAtt RoomAvailabilityLambdaFunction.Arn }
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: $input.json('$')
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # Lambda permission for RoomAvailabilityLambda function
+  LambdaInvokePermissionRoomAvailability:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref RoomAvailabilityLambdaFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/roomavailability"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  ApiGatewayRequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      Name: "RequestValidator"
+      RestApiId: !Ref ApiGatewayRestApi
+      ValidateRequestBody: true
+      ValidateRequestParameters: false
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - ApiGatewayMethodPostSubscribe
+      - ApiGatewayMethodOptionsSns
+      - ApiGatewayMethodOptionsSubscribe
+      - ApiGatewayMethodPostSendEmail
+      - ApiGatewayMethodOptionsSendEmail
+      - ApiGatewayMethodOptionsCaesarCipher
+      - ApiGatewayMethodPostCaesarCipher
+      - ApiGatewayMethodOptionsCaesarCipherVerify
+      - ApiGatewayMethodPostCaesarCipherVerify
+      - ApiGatewayMethodOptionsSecurityQnA
+      - ApiGatewayMethodPostSecurityQnA
+      - ApiGatewayMethodOptionsSecurityQnAVerify
+      - ApiGatewayMethodPostSecurityQnAVerify
+      - ApiGatewayMethodOptionsUpload
+      - ApiGatewayMethodPostUpload
+      - ApiGatewayMethodOptionsBooking
+      - ApiGatewayMethodGetBooking
+      - ApiGatewayMethodPostBooking
+      - ApiGatewayMethodOptionsGetRooms
+      - ApiGatewayMethodPostGetRooms
+      - ApiGatewayMethodGetRooms
+      - ApiGatewayMethodOptionsAddRooms
+      - ApiGatewayMethodPostAddRooms
+      - ApiGatewayMethodOptionsBookingNumber
+      - ApiGatewayMethodPostBookingNumber
+      - ApiGatewayMethodOptionsDialogFlowController
+      - ApiGatewayMethodPostDialogFlowController
+      - ApiGatewayMethodOptionsFeedback
+      - ApiGatewayMethodPostFeedback
+      - ApiGatewayMethodOptionsRoomAvailability
+      - ApiGatewayMethodPostRoomAvailability
+    Properties:
+      RestApiId: !Ref ApiGatewayRestApi
+      StageName: "v1"
+
+  LambdaInvokePermissionSubscribe:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref SubscribeUserEmailToTopic
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/sns/subscribe"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }
+
+  LambdaInvokePermissionSendEmail:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref SendEventEmailToUser
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub
+        - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/*/POST/sns/sendEmail"
+        - { ApiGatewayRestApi: !Ref ApiGatewayRestApi }

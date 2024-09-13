@@ -1,0 +1,28 @@
+# build container image + push to Google Artifact Registry + deploy to Cloud Run
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'us-east4-docker.pkg.dev/csci-5410-serverless-dp/dal-vacation-home-flutter-app/dalvacationhome', '.']
+
+  # Push the container image to Google Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-east4-docker.pkg.dev/csci-5410-serverless-dp/dal-vacation-home-flutter-app/dalvacationhome']
+
+  # Deploy the container image to Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'dal-vacation-home-flutter-app'
+      - '--image'
+      - 'us-east4-docker.pkg.dev/csci-5410-serverless-dp/dal-vacation-home-flutter-app/dalvacationhome'
+      - '--platform'
+      - 'managed'
+      - '--region'
+      - 'us-east4'
+      - '--port'
+      - '80'
+      - '--allow-unauthenticated'
+
+# images:
+#   - 'us-east4-docker.pkg.dev/csci-5410-serverless-dp/dal-vacation-home-flutter-app'
